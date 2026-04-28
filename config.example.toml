@@ -1,0 +1,15 @@
+# Copy to config.toml and edit.
+
+# Channels (logins, the part in the URL after twitch.tv/) to track.
+channels = ["moonmoon"]
+
+# How often to poll, in seconds. Twitch grants 10 points every 5 minutes for watching,
+# so 300s is the natural cadence.
+interval_seconds = 300
+
+# SQLite database path (relative to cwd or absolute).
+db_path = "points.db"
+
+[server]
+host = "127.0.0.1"
+port = 8765

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Twitch Points Tracker</title>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, sans-serif; margin: 0; padding: 1.5rem; background: #18181b; color: #efeff1; }
+    h1 { margin: 0 0 1rem; font-size: 1.25rem; }
+    .controls { margin-bottom: 1rem; display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+    select, button { background: #1f1f23; color: #efeff1; border: 1px solid #303032; padding: 0.4rem 0.6rem; border-radius: 4px; font: inherit; }
+    button { cursor: pointer; }
+    button:hover { background: #2a2a2e; }
+    .chart-wrap { background: #1f1f23; border: 1px solid #303032; border-radius: 6px; padding: 1rem; height: 70vh; }
+    .empty { color: #adadb8; font-style: italic; padding: 2rem; text-align: center; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+</head>
+<body>
+  <h1>Twitch Channel Points</h1>
+  <div class="controls">
+    <label for="range">Range:</label>
+    <select id="range">
+      <option value="86400">Last 24h</option>
+      <option value="604800" selected>Last 7d</option>
+      <option value="2592000">Last 30d</option>
+      <option value="0">All time</option>
+    </select>
+    <button id="refresh">Refresh</button>
+    <span id="status" style="color:#adadb8"></span>
+  </div>
+  <div class="chart-wrap">
+    <canvas id="chart"></canvas>
+  </div>
+
+<script>
+const PALETTE = [
+  "#a970ff", "#ff75e6", "#fab4ff", "#ffca3a", "#1abc9c",
+  "#3498db", "#ff7f50", "#7fff7f", "#ff6961", "#bdb2ff",
+];
+
+let chart = null;
+
+async function fetchJson(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(r.status + " " + r.statusText);
+  return r.json();
+}
+
+async function load() {
+  const status = document.getElementById("status");
+  status.textContent = "loading...";
+  try {
+    const channels = await fetchJson("/api/channels");
+    if (channels.length === 0) {
+      status.textContent = "no data yet — run `twitch-points collect --once` or backfill a JSON file";
+      if (chart) { chart.destroy(); chart = null; }
+      return;
+    }
+    const rangeSec = parseInt(document.getElementById("range").value, 10);
+    const since = rangeSec > 0 ? Math.floor(Date.now() / 1000) - rangeSec : null;
+    const datasets = [];
+    for (let i = 0; i < channels.length; i++) {
+      const ch = channels[i];
+      const url = "/api/series?channel=" + encodeURIComponent(ch) + (since ? "&since=" + since : "");
+      const points = await fetchJson(url);
+      datasets.push({
+        label: ch,
+        data: points.map(p => ({ x: p.ts * 1000, y: p.balance })),
+        borderColor: PALETTE[i % PALETTE.length],
+        backgroundColor: PALETTE[i % PALETTE.length] + "33",
+        tension: 0.1,
+        pointRadius: 0,
+        borderWidth: 1.5,
+      });
+    }
+
+    const ctx = document.getElementById("chart").getContext("2d");
+    if (chart) chart.destroy();
+    chart = new Chart(ctx, {
+      type: "line",
+      data: { datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "nearest", intersect: false },
+        scales: {
+          x: { type: "time", ticks: { color: "#adadb8" }, grid: { color: "#2a2a2e" } },
+          y: {
+            ticks: {
+              color: "#adadb8",
+              callback: (v) => v.toLocaleString(),
+            },
+            grid: { color: "#2a2a2e" },
+          },
+        },
+        plugins: {
+          legend: { labels: { color: "#efeff1" } },
+          tooltip: {
+            callbacks: {
+              label: (c) => c.dataset.label + ": " + c.parsed.y.toLocaleString(),
+            },
+          },
+        },
+      },
+    });
+    status.textContent = "updated " + new Date().toLocaleTimeString();
+  } catch (e) {
+    status.textContent = "error: " + e.message;
+  }
+}
+
+document.getElementById("refresh").addEventListener("click", load);
+document.getElementById("range").addEventListener("change", load);
+load();
+setInterval(load, 60_000);
+</script>
+</body>
+</html>

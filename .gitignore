@@ -1,0 +1,24 @@
+# Secrets and local config
+.env
+config.toml
+
+# Data
+*.db
+*.db-wal
+*.db-shm
+
+# Python build / cache
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Editor / tooling
+.claude/
+.idea/
+.vscode/
+.DS_Store
