@@ -1,45 +1,197 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="bg-ink text-cream antialiased">
 <head>
-  <meta charset="UTF-8">
-  <title>Twitch Points Tracker</title>
-  <style>
-    body { font-family: ui-sans-serif, system-ui, sans-serif; margin: 0; padding: 1.5rem; background: #18181b; color: #efeff1; }
-    h1 { margin: 0 0 1rem; font-size: 1.25rem; }
-    .controls { margin-bottom: 1rem; display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
-    select, button { background: #1f1f23; color: #efeff1; border: 1px solid #303032; padding: 0.4rem 0.6rem; border-radius: 4px; font: inherit; }
-    button { cursor: pointer; }
-    button:hover { background: #2a2a2e; }
-    .chart-wrap { background: #1f1f23; border: 1px solid #303032; border-radius: 6px; padding: 1rem; height: 70vh; }
-    .empty { color: #adadb8; font-style: italic; padding: 2rem; text-align: center; }
-  </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Channel Points Ticker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,600;1,9..144,300;1,9..144,500&family=JetBrains+Mono:wght@300;400;500&display=swap">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink:    '#0a0a0f',
+            'ink-2':'#13131a',
+            'ink-3':'#1c1c25',
+            line:   '#26262f',
+            cream:  '#ede8de',
+            mute:   '#7d7a72',
+            accent: '#a970ff',
+            gain:   '#7be38a',
+            loss:   '#ff7a7a',
+          },
+          fontFamily: {
+            serif: ['"Fraunces"', 'serif'],
+            mono:  ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+          },
+        }
+      }
+    }
+  </script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <style>
+    body {
+      background:
+        radial-gradient(80vw 60vh at 75% -10%, rgba(169,112,255,0.10), transparent 60%),
+        radial-gradient(60vw 40vh at -10% 110%, rgba(123,227,138,0.05), transparent 55%),
+        #0a0a0f;
+      background-attachment: fixed;
+      font-feature-settings: "ss01","cv11";
+    }
+    /* faint film grain so the dark surfaces don't feel digital-flat */
+    body::before {
+      content: "";
+      position: fixed; inset: 0; pointer-events: none; z-index: 1;
+      opacity: 0.035;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+    }
+    body > * { position: relative; z-index: 2; }
+
+    .tabular { font-variant-numeric: tabular-nums; }
+
+    /* page-load stagger */
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .rise { animation: rise 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%      { opacity: 0.35; }
+    }
+    .blink { animation: blink 1.6s ease-in-out infinite; }
+
+    /* segmented range pill */
+    .range-chip {
+      font-family: '"JetBrains Mono"', monospace;
+      font-size: 0.72rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #7d7a72;
+      padding: 0.4rem 0.85rem;
+      border-radius: 9999px;
+      transition: all 150ms ease;
+      cursor: pointer;
+      border: 1px solid transparent;
+    }
+    .range-chip:hover { color: #ede8de; }
+    .range-chip.active {
+      background: #ede8de;
+      color: #0a0a0f;
+      border-color: #ede8de;
+    }
+
+    /* card hover lift + active selection */
+    .stat-card { transition: transform 200ms ease, border-color 200ms ease, background-color 200ms ease; cursor: pointer; }
+    .stat-card:hover { transform: translateY(-2px); border-color: #383844; }
+    .stat-card.active { border-color: #ede8de; background-color: #16161e; }
+    .stat-card.active::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      box-shadow: 0 0 0 1px rgba(237,232,222,0.18) inset;
+    }
+    .stat-card .pin {
+      position: absolute; top: 0.85rem; right: 0.85rem;
+      font-size: 0.55rem; letter-spacing: 0.25em; text-transform: uppercase;
+      color: #0a0a0f; background: #ede8de; padding: 0.18rem 0.45rem; border-radius: 9999px;
+      opacity: 0; transition: opacity 200ms ease;
+    }
+    .stat-card.active .pin { opacity: 1; }
+
+    /* deco mini-rule */
+    .rule {
+      height: 1px;
+      background: linear-gradient(to right, #26262f 0%, #26262f 70%, transparent 100%);
+    }
+
+    /* chart canvas dims its native bg via parent */
+    canvas { background: transparent !important; }
+  </style>
 </head>
-<body>
-  <h1>Twitch Channel Points</h1>
-  <div class="controls">
-    <label for="range">Range:</label>
-    <select id="range">
-      <option value="86400">Last 24h</option>
-      <option value="604800" selected>Last 7d</option>
-      <option value="2592000">Last 30d</option>
-      <option value="0">All time</option>
-    </select>
-    <button id="refresh">Refresh</button>
-    <span id="status" style="color:#adadb8"></span>
+<body class="min-h-screen px-5 sm:px-10 lg:px-16 py-8 sm:py-12 font-mono">
+
+  <!-- masthead -->
+  <header class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-6 mb-10 pb-7 border-b border-line">
+    <div>
+      <div class="text-mute text-[0.7rem] tracking-[0.32em] uppercase mb-3 flex items-center gap-3">
+        <span>// Live Portfolio</span>
+        <span class="hidden sm:inline-block w-12 h-px bg-line"></span>
+        <span class="hidden sm:inline">No.&nbsp;001</span>
+      </div>
+      <h1 class="font-serif text-cream leading-[0.92] tracking-tight">
+        <span class="block text-5xl sm:text-7xl italic font-light">Channel Points</span>
+        <span class="block text-5xl sm:text-7xl text-accent italic font-light">Ticker.</span>
+      </h1>
+    </div>
+    <div class="flex sm:flex-col sm:items-end items-center justify-between gap-4 sm:gap-2">
+      <div class="flex items-center gap-2 text-[0.7rem] tracking-[0.2em] uppercase text-mute">
+        <span class="w-1.5 h-1.5 rounded-full bg-gain blink"></span>
+        <span id="status" class="text-cream">connecting…</span>
+      </div>
+      <div id="clock" class="font-serif tabular text-3xl sm:text-4xl text-cream font-light leading-none">--:--:--</div>
+    </div>
+  </header>
+
+  <!-- controls -->
+  <div class="flex items-center justify-between flex-wrap gap-4 mb-8">
+    <div class="flex items-center gap-3">
+      <span class="text-mute text-[0.7rem] tracking-[0.25em] uppercase">Range</span>
+      <div id="range-bar" class="flex gap-1 rounded-full bg-ink-2 border border-line p-1"></div>
+    </div>
+    <button id="refresh"
+      class="text-mute hover:text-cream transition text-[0.7rem] uppercase tracking-[0.2em] px-4 py-2 border border-line rounded-full hover:border-accent">
+      ↻ Refresh
+    </button>
   </div>
-  <div class="chart-wrap">
-    <canvas id="chart"></canvas>
-  </div>
+
+  <!-- stat cards -->
+  <section id="stats" class="grid gap-5 mb-10"
+    style="grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));"></section>
+
+  <!-- chart -->
+  <section class="rounded-2xl bg-ink-2 border border-line p-5 sm:p-7">
+    <div class="flex items-end justify-between mb-5 gap-4 flex-wrap">
+      <div>
+        <div class="text-mute text-[0.7rem] tracking-[0.25em] uppercase mb-2">Fig. 01 · click a card to switch</div>
+        <h2 id="chart-title" class="font-serif italic text-3xl sm:text-4xl text-cream font-light leading-none">Balance over time</h2>
+      </div>
+      <div id="chart-meta" class="text-mute text-[0.7rem] tracking-[0.2em] uppercase text-right"></div>
+    </div>
+    <div class="relative h-[60vh] min-h-[340px]">
+      <canvas id="chart"></canvas>
+    </div>
+  </section>
 
 <script>
 const PALETTE = [
-  "#a970ff", "#ff75e6", "#fab4ff", "#ffca3a", "#1abc9c",
-  "#3498db", "#ff7f50", "#7fff7f", "#ff6961", "#bdb2ff",
+  "#a970ff", "#ff75e6", "#ffca3a", "#1abc9c",
+  "#3498db", "#ff7f50", "#7be38a", "#ff7a7a",
+  "#fab4ff", "#bdb2ff",
+];
+
+const RANGES = [
+  { label: "24h", value: 86400 },
+  { label: "7d",  value: 604800, default: true },
+  { label: "30d", value: 2592000 },
+  { label: "All", value: 0 },
 ];
 
 let chart = null;
+let loadToken = 0;
+let refreshTimer = null;
+let currentRange = RANGES.find(r => r.default).value;
+let activeChannel = null;
+let lastResults = null;
+
+// ---------- helpers
 
 async function fetchJson(url) {
   const r = await fetch(url);
@@ -47,73 +199,472 @@ async function fetchJson(url) {
   return r.json();
 }
 
-async function load() {
-  const status = document.getElementById("status");
-  status.textContent = "loading...";
-  try {
-    const channels = await fetchJson("/api/channels");
-    if (channels.length === 0) {
-      status.textContent = "no data yet — run `twitch-points collect --once` or backfill a JSON file";
-      if (chart) { chart.destroy(); chart = null; }
-      return;
-    }
-    const rangeSec = parseInt(document.getElementById("range").value, 10);
-    const since = rangeSec > 0 ? Math.floor(Date.now() / 1000) - rangeSec : null;
-    const datasets = [];
-    for (let i = 0; i < channels.length; i++) {
-      const ch = channels[i];
-      const url = "/api/series?channel=" + encodeURIComponent(ch) + (since ? "&since=" + since : "");
-      const points = await fetchJson(url);
-      datasets.push({
-        label: ch,
-        data: points.map(p => ({ x: p.ts * 1000, y: p.balance })),
-        borderColor: PALETTE[i % PALETTE.length],
-        backgroundColor: PALETTE[i % PALETTE.length] + "33",
-        tension: 0.1,
-        pointRadius: 0,
-        borderWidth: 1.5,
-      });
-    }
+function fmt(n) { return n.toLocaleString(); }
+function fmtSigned(n) {
+  if (n === 0) return "0";
+  return (n > 0 ? "+" : "−") + Math.abs(n).toLocaleString();
+}
+function signClass(n) {
+  if (n > 0) return "text-gain";
+  if (n < 0) return "text-loss";
+  return "text-cream";
+}
 
-    const ctx = document.getElementById("chart").getContext("2d");
-    if (chart) chart.destroy();
-    chart = new Chart(ctx, {
-      type: "line",
-      data: { datasets },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        interaction: { mode: "nearest", intersect: false },
-        scales: {
-          x: { type: "time", ticks: { color: "#adadb8" }, grid: { color: "#2a2a2e" } },
-          y: {
-            ticks: {
-              color: "#adadb8",
-              callback: (v) => v.toLocaleString(),
-            },
-            grid: { color: "#2a2a2e" },
+function rangeLabel(v) {
+  return RANGES.find(r => r.value === v)?.label ?? "?";
+}
+function rangeLongLabel(v) {
+  if (v === 0) return "all time";
+  const r = RANGES.find(x => x.value === v);
+  return r ? `last ${r.label}` : "";
+}
+
+function computeStats(points) {
+  if (!points || points.length === 0) return null;
+  let high = points[0].balance;
+  let low  = points[0].balance;
+  let biggestGain = 0;
+  let biggestLoss = 0;
+  for (let i = 0; i < points.length; i++) {
+    const b = points[i].balance;
+    if (b > high) high = b;
+    if (b < low)  low  = b;
+    if (i > 0) {
+      const step = b - points[i - 1].balance;
+      if (step > biggestGain) biggestGain = step;
+      if (step < biggestLoss) biggestLoss = step;
+    }
+  }
+  const first = points[0].balance;
+  const last  = points[points.length - 1].balance;
+  return {
+    current: last, first, last,
+    delta: last - first,
+    high, low,
+    biggestGain, biggestLoss,
+    count: points.length,
+  };
+}
+
+function sparkline(points, color, w = 320, h = 44) {
+  if (!points || points.length < 2) {
+    return `<div class="h-11 flex items-center justify-center text-mute text-[0.65rem] tracking-widest uppercase">—</div>`;
+  }
+  const balances = points.map(p => p.balance);
+  const min = Math.min(...balances);
+  const max = Math.max(...balances);
+  const span = max - min || 1;
+  const step = w / (points.length - 1);
+  const pad = h * 0.1;
+  const inner = h - pad * 2;
+  const coords = points.map((p, i) => {
+    const x = i * step;
+    const y = h - pad - ((p.balance - min) / span) * inner;
+    return [x, y];
+  });
+  const path = coords.map((c, i) => (i === 0 ? "M" : "L") + c[0].toFixed(1) + "," + c[1].toFixed(1)).join(" ");
+  const last = coords[coords.length - 1];
+  const area = path + ` L${last[0].toFixed(1)},${h} L0,${h} Z`;
+  const id = "g" + Math.random().toString(36).slice(2, 8);
+  return `
+    <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" class="w-full h-11">
+      <defs>
+        <linearGradient id="${id}" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%"   stop-color="${color}" stop-opacity="0.45"/>
+          <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <path d="${area}" fill="url(#${id})"/>
+      <path d="${path}" fill="none" stroke="${color}" stroke-width="1.4"
+            stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>`;
+}
+
+// ---------- card rendering
+
+function makeCard({ channel, color, stats, points, error, index, isActive, selectable }) {
+  const wrap = document.createElement("article");
+  wrap.className = "rise stat-card relative rounded-2xl bg-ink-2 border border-line overflow-hidden"
+                 + (isActive ? " active" : "");
+  wrap.style.animationDelay = (index * 70) + "ms";
+  if (selectable) {
+    wrap.setAttribute("role", "button");
+    wrap.setAttribute("tabindex", "0");
+    wrap.addEventListener("click", () => selectChannel(channel));
+    wrap.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectChannel(channel); }
+    });
+  } else {
+    wrap.style.cursor = "default";
+  }
+
+  if (error) {
+    wrap.innerHTML = `
+      <span class="absolute left-0 top-0 bottom-0 w-[3px] bg-loss"></span>
+      <div class="p-6">
+        <div class="flex items-baseline justify-between mb-4">
+          <h3 class="font-serif italic text-2xl text-cream truncate">${escapeHtml(channel)}</h3>
+        </div>
+        <div class="text-loss text-sm">unable to load</div>
+        <div class="text-mute text-xs mt-2 break-all">${escapeHtml(error)}</div>
+      </div>`;
+    return wrap;
+  }
+
+  if (!stats) {
+    wrap.innerHTML = `
+      <span class="absolute left-0 top-0 bottom-0 w-[3px]" style="background:${color}"></span>
+      <div class="p-6">
+        <div class="flex items-baseline justify-between mb-4">
+          <h3 class="font-serif italic text-2xl text-cream truncate">${escapeHtml(channel)}</h3>
+          <span class="text-mute text-[0.65rem] tracking-widest uppercase">no data</span>
+        </div>
+        <div class="text-mute italic text-sm">No snapshots in the selected range.</div>
+      </div>`;
+    return wrap;
+  }
+
+  const deltaCls = signClass(stats.delta);
+  const arrow = stats.delta > 0 ? "▲" : stats.delta < 0 ? "▼" : "·";
+
+  wrap.innerHTML = `
+    <span class="absolute left-0 top-0 bottom-0 w-[3px]" style="background:${color}"></span>
+    <span class="pin">Viewing</span>
+    <div class="p-6">
+      <div class="flex items-baseline justify-between mb-5 gap-3">
+        <h3 class="font-serif italic text-2xl text-cream truncate">${escapeHtml(channel)}</h3>
+        <span class="text-mute text-[0.65rem] tracking-[0.2em] uppercase shrink-0">${stats.count} pts</span>
+      </div>
+
+      <div class="mb-2">
+        <div class="text-mute text-[0.65rem] tracking-[0.25em] uppercase mb-2">P/L · ${rangeLongLabel(currentRange)}</div>
+        <div class="font-serif font-light leading-none tabular flex items-baseline gap-3 ${deltaCls}">
+          <span class="text-[0.85rem] tracking-widest opacity-70 -translate-y-[2px]">${arrow}</span>
+          <span class="text-[3.25rem] sm:text-[3.75rem]">${fmtSigned(stats.delta)}</span>
+        </div>
+      </div>
+
+      <div class="my-4">${sparkline(points, color)}</div>
+
+      <div class="rule mb-4"></div>
+
+      <dl class="grid grid-cols-2 gap-y-2.5 gap-x-6 text-[0.78rem] tabular">
+        ${row("Current",   fmt(stats.current),         "text-cream",     true)}
+        ${row("High",      fmt(stats.high),            "text-cream")}
+        ${row("Low",       fmt(stats.low),             "text-cream")}
+        ${row("Biggest +", fmtSigned(stats.biggestGain), signClass(stats.biggestGain))}
+        ${row("Biggest −", fmtSigned(stats.biggestLoss), signClass(stats.biggestLoss))}
+      </dl>
+    </div>`;
+  return wrap;
+}
+
+function row(label, value, valueCls, span2) {
+  return `
+    <div class="flex items-baseline justify-between ${span2 ? "col-span-2" : ""}">
+      <dt class="text-mute text-[0.62rem] tracking-[0.22em] uppercase">${label}</dt>
+      <dd class="${valueCls}">${value}</dd>
+    </div>`;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
+
+// ---------- range bar
+
+function renderRangeBar() {
+  const bar = document.getElementById("range-bar");
+  bar.innerHTML = "";
+  for (const r of RANGES) {
+    const btn = document.createElement("button");
+    btn.className = "range-chip" + (r.value === currentRange ? " active" : "");
+    btn.textContent = r.label;
+    btn.addEventListener("click", () => {
+      if (r.value === currentRange) return;
+      currentRange = r.value;
+      renderRangeBar();
+      load();
+    });
+    bar.appendChild(btn);
+  }
+}
+
+// ---------- chart
+
+const CHART_FONT = { family: '"JetBrains Mono", monospace', size: 11, weight: 400 };
+
+// series = [{ ch, color, points }]
+// 1 channel  → single absolute axis
+// 2 channels → dual absolute axes (left + right, tick color matches line)
+// 3+ channels → single % change axis (re-baselined to first point in range)
+function buildChart(series) {
+  const ctx = document.getElementById("chart").getContext("2d");
+  if (chart) chart.destroy();
+  if (series.length === 0) { chart = null; return "empty"; }
+
+  const mode = series.length === 2 ? "dual" : series.length >= 3 ? "relative" : "single";
+
+  let datasets, scales;
+  const xScale = {
+    type: "time",
+    ticks: { color: "#7d7a72", font: CHART_FONT, maxRotation: 0 },
+    grid: { color: "rgba(38,38,47,0.6)", drawTicks: false },
+    border: { color: "#26262f" },
+  };
+
+  if (mode === "relative") {
+    datasets = series.map(s => {
+      const base = s.points[0].balance || 1;
+      return {
+        label: s.ch,
+        data: s.points.map(p => ({
+          x: p.ts * 1000,
+          y: ((p.balance - s.points[0].balance) / Math.abs(base)) * 100,
+          _abs: p.balance,
+        })),
+        borderColor: s.color,
+        backgroundColor: s.color + "26",
+        tension: 0.18, pointRadius: 0, borderWidth: 1.5, fill: false,
+      };
+    });
+    scales = {
+      x: xScale,
+      y: {
+        ticks: {
+          color: "#7d7a72", font: CHART_FONT, padding: 8,
+          callback: v => (v > 0 ? "+" : "") + v.toFixed(1) + "%",
+        },
+        grid: { color: "rgba(38,38,47,0.5)", drawTicks: false },
+        border: { display: false },
+      },
+    };
+  } else if (mode === "dual") {
+    datasets = series.map((s, i) => ({
+      label: s.ch,
+      data: s.points.map(p => ({ x: p.ts * 1000, y: p.balance })),
+      borderColor: s.color,
+      backgroundColor: s.color + "26",
+      tension: 0.18, pointRadius: 0, borderWidth: 1.5, fill: false,
+      yAxisID: i === 0 ? "yL" : "yR",
+    }));
+    scales = {
+      x: xScale,
+      yL: {
+        type: "linear", position: "left",
+        ticks: { color: series[0].color, font: CHART_FONT, padding: 8,
+                 callback: v => v.toLocaleString() },
+        grid: { color: "rgba(38,38,47,0.5)", drawTicks: false, drawOnChartArea: true },
+        border: { display: false },
+      },
+      yR: {
+        type: "linear", position: "right",
+        ticks: { color: series[1].color, font: CHART_FONT, padding: 8,
+                 callback: v => v.toLocaleString() },
+        grid: { drawOnChartArea: false },
+        border: { display: false },
+      },
+    };
+  } else {
+    datasets = series.map(s => ({
+      label: s.ch,
+      data: s.points.map(p => ({ x: p.ts * 1000, y: p.balance })),
+      borderColor: s.color,
+      backgroundColor: s.color + "26",
+      tension: 0.18, pointRadius: 0, borderWidth: 1.5, fill: false,
+    }));
+    scales = {
+      x: xScale,
+      y: {
+        ticks: { color: "#7d7a72", font: CHART_FONT, padding: 8,
+                 callback: v => v.toLocaleString() },
+        grid: { color: "rgba(38,38,47,0.5)", drawTicks: false },
+        border: { display: false },
+      },
+    };
+  }
+
+  chart = new Chart(ctx, {
+    type: "line",
+    data: { datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "nearest", intersect: false },
+      scales,
+      plugins: {
+        legend: {
+          labels: {
+            color: "#ede8de",
+            font: { ...CHART_FONT, size: 12 },
+            usePointStyle: true, pointStyle: "line",
+            boxHeight: 2, boxWidth: 24,
           },
         },
-        plugins: {
-          legend: { labels: { color: "#efeff1" } },
-          tooltip: {
-            callbacks: {
-              label: (c) => c.dataset.label + ": " + c.parsed.y.toLocaleString(),
+        tooltip: {
+          backgroundColor: "#13131a",
+          borderColor: "#26262f",
+          borderWidth: 1,
+          titleColor: "#ede8de",
+          bodyColor: "#ede8de",
+          titleFont: { ...CHART_FONT, size: 11, weight: 500 },
+          bodyFont: CHART_FONT,
+          padding: 10,
+          callbacks: {
+            label: c => {
+              const abs = c.raw && c.raw._abs != null ? c.raw._abs : c.parsed.y;
+              const pct = c.raw && c.raw._abs != null
+                ? "  (" + (c.parsed.y > 0 ? "+" : "") + c.parsed.y.toFixed(2) + "%)"
+                : "";
+              return "  " + c.dataset.label + " — " + abs.toLocaleString() + pct;
             },
           },
         },
       },
-    });
-    status.textContent = "updated " + new Date().toLocaleTimeString();
+    },
+  });
+  return mode;
+}
+
+// ---------- main load loop
+
+async function load() {
+  const token = ++loadToken;
+  const status = document.getElementById("status");
+  const statsEl = document.getElementById("stats");
+  const chartMeta = document.getElementById("chart-meta");
+  status.textContent = "loading…";
+
+  let channels;
+  try {
+    channels = await fetchJson("/api/channels");
   } catch (e) {
-    status.textContent = "error: " + e.message;
+    if (token !== loadToken) return;
+    status.textContent = "offline";
+    return;
+  }
+  if (token !== loadToken) return;
+
+  if (channels.length === 0) {
+    statsEl.innerHTML = `
+      <div class="rise col-span-full rounded-2xl border border-dashed border-line bg-ink-2/40 p-10 text-center">
+        <div class="text-mute text-[0.7rem] tracking-[0.3em] uppercase mb-3">Empty Portfolio</div>
+        <div class="font-serif italic text-2xl text-cream mb-2">No channels tracked yet.</div>
+        <code class="text-mute text-xs">twitch-points collect --once</code>
+      </div>`;
+    if (chart) { chart.destroy(); chart = null; }
+    status.textContent = "no channels";
+    chartMeta.textContent = "";
+    return;
+  }
+
+  const since = currentRange > 0 ? Math.floor(Date.now() / 1000) - currentRange : null;
+
+  const results = await Promise.all(channels.map(async (ch) => {
+    const url = "/api/series?channel=" + encodeURIComponent(ch) + (since ? "&since=" + since : "");
+    try {
+      const points = await fetchJson(url);
+      return { ch, points, error: null };
+    } catch (e) {
+      return { ch, points: null, error: e.message };
+    }
+  }));
+  if (token !== loadToken) return;
+
+  const totalPoints = results.reduce((n, r) => n + (r.points ? r.points.length : 0), 0);
+  const errCount = results.filter(r => r.error).length;
+
+  statsEl.innerHTML = "";
+
+  if (totalPoints === 0 && errCount === 0) {
+    const msg = document.createElement("div");
+    msg.className = "rise col-span-full rounded-2xl border border-dashed border-line bg-ink-2/40 p-10 text-center";
+    msg.innerHTML = `
+      <div class="text-mute text-[0.7rem] tracking-[0.3em] uppercase mb-3">No Activity</div>
+      <div class="font-serif italic text-2xl text-cream">Nothing recorded in the ${rangeLongLabel(currentRange)}.</div>`;
+    statsEl.appendChild(msg);
+    if (chart) { chart.destroy(); chart = null; }
+    document.getElementById("chart-title").textContent = "Balance over time";
+    chartMeta.textContent = rangeLongLabel(currentRange);
+    status.textContent = "updated " + new Date().toLocaleTimeString("en-US", { hour12: false });
+    return;
+  }
+
+  lastResults = results;
+
+  // Pick / preserve active channel: keep current selection if still has data,
+  // otherwise fall back to the first channel that does.
+  const validChannels = results.filter(r => r.points && r.points.length > 0).map(r => r.ch);
+  if (!validChannels.includes(activeChannel)) {
+    activeChannel = validChannels[0] || null;
+  }
+
+  render();
+
+  const suffix = errCount > 0 ? `  ·  ${errCount} failed` : "";
+  status.textContent = "updated " + new Date().toLocaleTimeString("en-US", { hour12: false }) + suffix;
+}
+
+function selectChannel(ch) {
+  if (!ch || ch === activeChannel) return;
+  activeChannel = ch;
+  render();
+}
+
+function render() {
+  if (!lastResults) return;
+  const statsEl = document.getElementById("stats");
+  const chartMeta = document.getElementById("chart-meta");
+  const chartTitle = document.getElementById("chart-title");
+
+  statsEl.innerHTML = "";
+
+  let activeColor = null;
+  let activePoints = null;
+
+  lastResults.forEach((r, i) => {
+    const color = PALETTE[i % PALETTE.length];
+    const stats = r.points ? computeStats(r.points) : null;
+    const isActive = r.ch === activeChannel;
+    const selectable = !r.error && stats != null;
+    if (isActive) { activeColor = color; activePoints = r.points; }
+    statsEl.appendChild(makeCard({
+      channel: r.ch, color, stats, points: r.points, error: r.error,
+      index: i, isActive, selectable,
+    }));
+  });
+
+  if (activeChannel && activePoints && activePoints.length > 0) {
+    buildChart([{ ch: activeChannel, color: activeColor, points: activePoints }]);
+    chartTitle.textContent = activeChannel;
+    chartMeta.innerHTML = `<span>${rangeLongLabel(currentRange)}</span><span class="mx-2 text-line">|</span><span>${activePoints.length.toLocaleString()} pts</span>`;
+  } else {
+    if (chart) { chart.destroy(); chart = null; }
+    chartTitle.textContent = "Balance over time";
+    chartMeta.innerHTML = `<span>${rangeLongLabel(currentRange)}</span>`;
   }
 }
 
+// ---------- live clock
+
+function tickClock() {
+  const el = document.getElementById("clock");
+  if (!el) return;
+  el.textContent = new Date().toLocaleTimeString("en-US", { hour12: false });
+}
+
+// ---------- bootstrap
+
 document.getElementById("refresh").addEventListener("click", load);
-document.getElementById("range").addEventListener("change", load);
+renderRangeBar();
+tickClock();
+setInterval(tickClock, 1000);
 load();
-setInterval(load, 60_000);
+if (refreshTimer === null) {
+  refreshTimer = setInterval(load, 60_000);
+}
 </script>
 </body>
 </html>
